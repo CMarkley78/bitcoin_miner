@@ -5,5 +5,4 @@ Profiler:
 	./build/out.exe
 	rd /s /q build
 
-
 .PHONY: Profiler

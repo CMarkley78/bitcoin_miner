@@ -27,7 +27,7 @@ __device__ uint32_t reverse32(uint32_t x) {
 //Returns 1 if test1 < test2, and 0 otherwise. Used to compare the generated hash to the target.
 __device__ unsigned char compareHashes(const uint32_t* test1, const uint32_t* test2) {
   for (int i=0; i<8; i++) {
-      if (test1[i] < test2[i]) {
+      if (test1[7-i] < test2[i]) {
           return 1;
       } else if (test1[i] > test2[i]) {
           return 0;
@@ -230,9 +230,9 @@ __constant__ unsigned char d_header_template[76];
 
 __constant__ uint32_t target[8];
 
-__global__ void d_test_span(unsigned int * flag, int n) {
+__global__ void d_test_span() {
   //First thing that needs to be done is to get the number that the thread is testing
-  uint32_t nonce = (1024*65536*n)+(1024*blockIdx.x)+(threadIdx.x);
+  uint32_t nonce = (1024*65536)+(1024*blockIdx.x)+(threadIdx.x);
   nonce = 2083236893; //Remember to remove this,
 
   //Let's sync up, then create our shared memory space for the header and the hash.
@@ -252,37 +252,53 @@ __global__ void d_test_span(unsigned int * flag, int n) {
   d_second_hash(hash);
 
   //Compare to target
-  if (threadIdx.x==0 && blockIdx.x==0) {
-    for (int i=0;i<8;i++) {
-      printf("%08x",hash[i]);
-    }
-    printf("\n");
+  if (compareHashes(hash,target)==1 && blockIdx.x==0 && threadIdx.x==0) {
+    printf("\n1\n");
   }
 }
 
 
 
 void search (unsigned char * header_info) {
-  unsigned int flag[64]; //CPU spot for "found valid hash" flag
-  unsigned int* d_flag; //Pointer to GPU memory for "found valid hash" flag
-  cudaMalloc((void**)&d_flag,sizeof(unsigned int)*64); //Allocating and getting value of pointer.
-
-  //unsigned char* header_data;
-  //cudaMalloc((void**)&header_data,sizeof(unsigned char)*76);
-  //cudaMemcpy(header_data,header_info,sizeof(unsigned char)*76,cudaMemcpyHostToDevice);
 
   cudaMemcpyToSymbol(d_header_template, header_info, sizeof(unsigned char)*76);
 
-  d_test_span<<<1,1>>>(d_flag, 0);
 
+  LARGE_INTEGER frequency;
+  LARGE_INTEGER start;
+  LARGE_INTEGER end;
+  double elapsed_time;
+  uint32_t max_uint32_t = ((uint32_t)0)-1;
+  int best_g=1,best_t=1;
+  double best_hashrate = 0;
 
-  //Freeing any memory that has been allocated.
-  cudaFree(d_flag);
+  for (int grid_dim=1;grid_dim<500000;grid_dim++) {
+    for (int thread_dim=1;thread_dim<1024;thread_dim++) {
+      if ((grid_dim*thread_dim) < max_uint32_t && max_uint32_t % (grid_dim*thread_dim)) {
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&start);
+
+        d_test_span<<<grid_dim,thread_dim>>>();
+        cudaDeviceSynchronize();
+
+        QueryPerformanceCounter(&end);
+        elapsed_time = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
+
+        if (((grid_dim*thread_dim)/elapsed_time) > best_hashrate) {
+          best_g = grid_dim;
+          best_t = thread_dim;
+          best_hashrate = ((grid_dim*thread_dim)/elapsed_time);
+          printf("\nBest Grid-Dim Pair: %d-%d, Best Hash Rate: %f... Last Grid-Dim Pair tested: %d-%d\n",best_g,best_t,best_hashrate,grid_dim,thread_dim);
+        }
+      }
+    }
+  }
+
 }
 
 //When this code is actually executed, it should time how long it takes to search through the possible solutions of the genesis block header.
 int main() { //Remember that the main function should be straight up removed when this as a library is completed. The functions within this code will be called directly from python using ctypes
-
+    printf("\n");
     //THIS GENERATES THE GENESIS BLOCK HEADER. IT IS THEN STORED IN THE UNSIGNED CHAR ARRAY "header". Also remember that every value here is btye swapped (Little endian).
     //Leaving these here. Just in case. They're all in the header_str, just don't want to remove the separate parts because I might need to rebuild it for whatever reason.
     //char version_str[] = "01000000";
@@ -298,5 +314,6 @@ int main() { //Remember that the main function should be straight up removed whe
 
     search(header); //Every operation for finding and returning a status must be encased in this function call.
 
+    printf("\n");
     return 0;
 }
