@@ -274,7 +274,7 @@ void search (unsigned char * header_info) {
 
   for (int grid_dim=1;grid_dim<500000;grid_dim++) {
     for (int thread_dim=1;thread_dim<1024;thread_dim++) {
-      if ((grid_dim*thread_dim) < max_uint32_t && max_uint32_t % (grid_dim*thread_dim)) {
+      if ((grid_dim*thread_dim) < max_uint32_t) {
         QueryPerformanceFrequency(&frequency);
         QueryPerformanceCounter(&start);
 
@@ -290,7 +290,7 @@ void search (unsigned char * header_info) {
           best_hashrate = ((grid_dim*thread_dim)/elapsed_time);
         }
       }
-    printf("\nBest Grid-Dim Pair: %d-%d, Best Hash Rate: %f... Last Grid-Dim Pair tested: %d-%d\n",best_g,best_t,best_hashrate,grid_dim,thread_dim);
+    printf("\nBest Grid-Dim Pair: %d-%d, Best Hash Rate: %f... Nonce space can be tested in %fs... Last Grid-Dim Pair tested: %d-%d\n",best_g,best_t,best_hashrate,max_uint32_t/best_hashrate,grid_dim,thread_dim);
     }
   }
 
