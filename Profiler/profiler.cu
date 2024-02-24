@@ -228,14 +228,16 @@ __device__ void d_second_hash(uint32_t* hash) {
 
 __constant__ unsigned char d_header_template[76];
 
+__constant__ uint32_t target[8];
+
 __global__ void d_test_span(unsigned int * flag, int n) {
   //First thing that needs to be done is to get the number that the thread is testing
   uint32_t nonce = (1024*65536*n)+(1024*blockIdx.x)+(threadIdx.x);
-  nonce = 2083236893;
+  nonce = 2083236893; //Remember to remove this,
 
   //Let's sync up, then create our shared memory space for the header and the hash.
   unsigned char header[80];
-  __shared__ uint32_t hash[8*1024];
+  uint32_t hash[8];
 
   //Populate the header
   for (int i=0;i<76;i++) {
@@ -244,15 +246,15 @@ __global__ void d_test_span(unsigned int * flag, int n) {
   memcpy(&header[76],&nonce,4);
 
   //Perform the first hash
-  d_first_hash(header,&hash[8*threadIdx.x]);
+  d_first_hash(header,hash);
 
   //Perform the second hash
-  d_second_hash(&hash[8*threadIdx.x]);
+  d_second_hash(hash);
 
-  __syncthreads();
-  if (blockIdx.x==0 && threadIdx.x==0) {
+  //Compare to target
+  if (threadIdx.x==0 && blockIdx.x==0) {
     for (int i=0;i<8;i++) {
-      printf("%08x",hash[(8*threadIdx.x)+i]);
+      printf("%08x",hash[i]);
     }
     printf("\n");
   }
@@ -271,49 +273,7 @@ void search (unsigned char * header_info) {
 
   cudaMemcpyToSymbol(d_header_template, header_info, sizeof(unsigned char)*76);
 
-  //Grid dimensions spec. This config needs the n value to go up to and include 63.
-  dim3 gridDim(1,1,1);
-  dim3 threadDim(1,1,1);
-  LARGE_INTEGER frequency;
-  LARGE_INTEGER start;
-  LARGE_INTEGER end;
-  double elapsedSeconds, avg_elapsed;
-
-  int best_g, best_t;
-  double best_rate = 0;
-
-  //Launching all the kernels (look at them go!)
-  for (int g=0;g<100000;g++) {
-    for (int t=0;t<1024;t++) {
-      avg_elapsed = 0;
-      for (int trial=0;trial<5;trial ++) {
-        QueryPerformanceFrequency(&frequency);
-        QueryPerformanceCounter(&start);
-
-        d_test_span<<<gridDim,threadDim>>>(d_flag, 0);
-        cudaDeviceSynchronize();
-
-        QueryPerformanceCounter(&end);
-        elapsedSeconds = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
-        avg_elapsed += elapsedSeconds/5;
-      }
-
-      cudaError_t kernelError = cudaGetLastError();
-      if (kernelError != cudaSuccess) {
-      printf("Kernel launch failed: %s\n", cudaGetErrorString(kernelError));
-      }
-      else {
-        if ((g*t)/avg_elapsed > best_rate && g*t <= (((uint32_t)0)-1)) {
-          best_rate = (g*t)/avg_elapsed;
-          best_g = g;
-          best_t = t;
-        }
-        printf("\nGrid: %d, Thread: %d, Rate: %f, Best G: %d, Best T: %d, Best Rate: %f\n",g,t,(g*t)/avg_elapsed,best_g,best_t,best_rate);
-      }
-  }
-}
-
-  //d_test_span<<<1,1>>>(d_flag, 0, d_header);
+  d_test_span<<<1,1>>>(d_flag, 0);
 
 
   //Freeing any memory that has been allocated.
@@ -322,9 +282,6 @@ void search (unsigned char * header_info) {
 
 //When this code is actually executed, it should time how long it takes to search through the possible solutions of the genesis block header.
 int main() { //Remember that the main function should be straight up removed when this as a library is completed. The functions within this code will be called directly from python using ctypes
-
-    int maxGridSize; cudaDeviceGetAttribute(&maxGridSize, cudaDevAttrMaxGridDimX, 0);
-    printf("\n%d\n",maxGridSize);
 
     //THIS GENERATES THE GENESIS BLOCK HEADER. IT IS THEN STORED IN THE UNSIGNED CHAR ARRAY "header". Also remember that every value here is btye swapped (Little endian).
     //Leaving these here. Just in case. They're all in the header_str, just don't want to remove the separate parts because I might need to rebuild it for whatever reason.
@@ -339,18 +296,7 @@ int main() { //Remember that the main function should be straight up removed whe
     str__char_arr(header_str, header);
     //END OF GENESIS BLOCK HEADER DEFENITION
 
-    LARGE_INTEGER frequency;
-    LARGE_INTEGER start;
-    LARGE_INTEGER end;
-    double elapsedSeconds;
-
-    cudaProfilerStart();
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
     search(header); //Every operation for finding and returning a status must be encased in this function call.
-    QueryPerformanceCounter(&end);
-    elapsedSeconds = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
-    printf("Effective hash rate: %f H/s\nTime taken: %f\n", (((uint32_t)0)-1)/elapsedSeconds,elapsedSeconds);
 
     return 0;
 }
