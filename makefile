@@ -1,8 +1,14 @@
-Profiler:
-	if exist build rd /s /q build
-	mkdir build
+Profiler: Clean
+	@mkdir build
 	nvcc -o ./build/out.exe ./Profiler/profiler.cu
 	./build/out.exe
-	rd /s /q build
 
-.PHONY: Profiler
+Library: Clean
+	@echo test
+
+Clean:
+	@echo Cleaning up environment...
+	@if exist build rd /s /q build
+	@echo Done!
+
+.PHONY: Profiler Clean Library
