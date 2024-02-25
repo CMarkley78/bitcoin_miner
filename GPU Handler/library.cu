@@ -7,8 +7,9 @@
 #include <windows.h>
 
 #define max_uint32_t (((uint32_t)0)-1)
-#define gridSize 50000
-#define threadSize 32
+#define gridSize 1000000
+#define threadSize 16
+#define test_cts ((int)ceil(max_uint32_t/(gridSize*threadSize)))
 
 void str__char_arr(const char* str, unsigned char* out) { //Remember to take this out once the library is finished.
     int len = strlen(str) / 2;
@@ -27,13 +28,16 @@ __device__ uint32_t right_rotate(uint32_t x, int n) {
 __device__ uint32_t reverse32(uint32_t x) {
   return ((x>>24)&0x000000FF)|((x>>8)&0x0000FF00)|((x<<8)&0x00FF0000)|((x<<24)&0xFF000000);
 }
+uint32_t cpu_reverse32(uint32_t x) {
+  return ((x>>24)&0x000000FF)|((x>>8)&0x0000FF00)|((x<<8)&0x00FF0000)|((x<<24)&0xFF000000);
+}
 
 //Returns 1 if test1 < test2, and 0 otherwise. Used to compare the generated hash to the target.
 __device__ unsigned char compareHashes(const uint32_t* test1, const uint32_t* test2) {
   for (int i=0; i<8; i++) {
-      if (test1[i] < test2[i]) {
+      if (reverse32(test1[7-i]) < test2[i]) {
           return 1;
-      } else if (test1[i] > test2[i]) {
+      } else if (reverse32(test1[7-i]) > test2[i]) {
           return 0;
       }
   }
@@ -47,6 +51,7 @@ __constant__ uint32_t k_vals[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5db
 
 //The hashing of the 80 byte input header, stores the output in hash
 __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
+
   //Initialization of hash parts
   hash[0] = 0x6a09e667;
   hash[1] = 0xbb67ae85;
@@ -169,7 +174,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
 
 __device__ void d_second_hash(uint32_t* hash) {
   //Initialization of working variables
-  __shared__ uint32_t message_schedule[64], s0, s1, temp1, temp2, a, b, c, d, e, f, g, h, ch, maj;
+  uint32_t message_schedule[64], s0, s1, temp1, temp2, a, b, c, d, e, f, g, h, ch, maj;
 
   //Because all of the hashed data now fits in one block, it's actually easier to just build up the message schedule rather than to build a block then copy it over.
   for (int i=8;i<16;i++) {
@@ -234,12 +239,12 @@ __constant__ unsigned char d_header_template[76];
 
 __constant__ uint32_t d_target[8];
 
-__global__ void d_test_span(unsigned char * flag, int n) {
+__global__ void d_test_span(int * flag, int n) {
   //First thing that needs to be done is to get the number that the thread is testing
-  uint32_t nonce = (threadSize*gridSize*n)+(threadSize*blockIdx.x)+(threadIdx.x);
-  nonce = 2083236893;
+  uint32_t nonce = ((threadSize*gridSize*n)+(threadSize*blockIdx.x)+(threadIdx.x));
+  //nonce = 2083236893;
 
-  //Let's sync up, then create our shared memory space for the header and the hash.
+  //Create our shared memory space for the header and the hash.
   unsigned char header[80];
   uint32_t hash[8];
 
@@ -250,59 +255,97 @@ __global__ void d_test_span(unsigned char * flag, int n) {
   memcpy(&header[76],&nonce,4);
 
   //Perform the first hash
-  d_first_hash(header,&hash[8*threadIdx.x]);
+  d_first_hash(header,hash);
 
   //Perform the second hash
-  d_second_hash(&hash[8*threadIdx.x]);
+  d_second_hash(hash);
 
-  __syncthreads();
-  if (blockIdx.x==0 && threadIdx.x==0) {
-    for (int i=0;i<8;i++) {
-      printf("%08x",hash[(8*threadIdx.x)+i]);
-    }
-    printf("\n");
-  }
+  //Increment the hit value for our chunk by the value of compareHashes (1 if found, 0 otherwise, array starts at 0s)
+  atomicAdd(&flag[n],(int)compareHashes(hash,d_target));
 }
 
+__global__ void d_search_specific(unsigned char* flag, int n) {
+  //First thing that needs to be done is to get the number that the thread is testing
+  uint32_t nonce = ((threadSize*gridSize*n)+(threadSize*blockIdx.x)+(threadIdx.x));
+  //nonce = 2083236893;
 
+  //Create our shared memory space for the header and the hash.
+  unsigned char header[80];
+  uint32_t hash[8];
 
-void search (unsigned char * header_info) {
+  //Populate the header
+  for (int i=0;i<76;i++) {
+    header[i] = d_header_template[i];
+  }
+  memcpy(&header[76],&nonce,4);
 
+  //Perform the first hash
+  d_first_hash(header,hash);
+
+  //Perform the second hash
+  d_second_hash(hash);
+
+  //Set our corresponding search section memory to our state
+  flag[(threadSize*blockIdx.x)+(threadIdx.x)] = compareHashes(hash,d_target);
+}
+
+void search (unsigned char * header_info, unsigned char* output) {
+  //Copy header into constant memory
   cudaMemcpyToSymbol(d_header_template, header_info, sizeof(unsigned char)*76);
 
-}
+  //Target generation and placement
+  uint32_t nbits;
+  memcpy(&nbits, &header_info[72], 4);
 
-//When this code is actually executed, it should time how long it takes to search through the possible solutions of the genesis block header.
-int main() { //Remember that the main function should be straight up removed when this as a library is completed. The functions within this code will be called directly from python using ctypes
+  uint32_t target[8] = {0};
+  //nbits = cpu_reverse32(nbits);
+  uint32_t bits_shift = 256 - (((nbits >> 24)) * 8);
+  uint32_t word_skip = bits_shift / 32;
+  uint32_t bit_skip = bits_shift % 32;
+  uint64_t significand = (uint64_t)(nbits & 0xFFFFFF) << (40 - bit_skip);
+  significand = (significand >> 32) | (significand << 32);
+  memcpy(&target[word_skip], &significand, sizeof(uint64_t));
 
-    int maxGridSize; cudaDeviceGetAttribute(&maxGridSize, cudaDevAttrMaxGridDimX, 0);
-    printf("\n%d\n",maxGridSize);
+  cudaMemcpyToSymbol(d_target,target,sizeof(uint32_t)*8);
 
-    //THIS GENERATES THE GENESIS BLOCK HEADER. IT IS THEN STORED IN THE UNSIGNED CHAR ARRAY "header". Also remember that every value here is btye swapped (Little endian).
-    //Leaving these here. Just in case. They're all in the header_str, just don't want to remove the separate parts because I might need to rebuild it for whatever reason.
-    //char version_str[] = "01000000";
-    //char prev_hash_str[] = "0000000000000000000000000000000000000000000000000000000000000000";
-    //char merkle_root_str[] = "3BA3EDFD7A7B12B27AC72C3E67768F617FC81BC3888A51323A9FB8AA4B1E5E4A";
-    //char time_str[] = "29AB5F49";
-    //char nbits_str[] = "FFFF001D";
-    //char working_nonce_str[] = "1DAC2B7C"; //Just keeping this here in case I need the nonce value for comparisons (i will).
-    char header_str[] = "0100000000000000000000000000000000000000000000000000000000000000000000003BA3EDFD7A7B12B27AC72C3E67768F617FC81BC3888A51323A9FB8AA4B1E5E4A29AB5F49FFFF001D";
-    unsigned char header[76];
-    str__char_arr(header_str, header);
-    //END OF GENESIS BLOCK HEADER DEFENITION
+  //Allocate some memory for the flag variables
+  int* chunk_hit_cts = (int*)malloc(sizeof(int)*test_cts);
+  for (int i=0;i<test_cts;i++) {
+    chunk_hit_cts[i] = 0;
+  }
+  int* d_flag;
+  cudaMalloc((void**)&d_flag,sizeof(int)*test_cts);
+  cudaMemcpy(d_flag,chunk_hit_cts,test_cts*sizeof(int),cudaMemcpyHostToDevice);
 
-    LARGE_INTEGER frequency;
-    LARGE_INTEGER start;
-    LARGE_INTEGER end;
-    double elapsedSeconds;
+  //Actually perform the search
+  for (int n=0;n<test_cts;n++) {
+    d_test_span<<<gridSize,threadSize>>>(d_flag,n);
+  }
+  cudaDeviceSynchronize();
+  cudaMemcpy(chunk_hit_cts,d_flag,test_cts*sizeof(int),cudaMemcpyDeviceToHost);
 
-    cudaProfilerStart();
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
-    search(header); //Every operation for finding and returning a status must be encased in this function call.
-    QueryPerformanceCounter(&end);
-    elapsedSeconds = (double)(end.QuadPart - start.QuadPart) / frequency.QuadPart;
-    printf("Effective hash rate: %f H/s\nTime taken: %f\n", (((uint32_t)0)-1)/elapsedSeconds,elapsedSeconds);
-
-    return 0;
+  bool solved = false;
+  uint32_t solve_nonce;
+  for (int test_n=0;test_n<test_cts && !solved;test_n++) {
+    if (chunk_hit_cts[test_n]!=0) {
+      solved = true;
+      unsigned char* search_flag = (unsigned char*)malloc(gridSize*threadSize*sizeof(unsigned char));
+      unsigned char* d_search_flag;
+      cudaMalloc((void**)&d_search_flag,gridSize*threadSize*sizeof(unsigned char));
+      d_search_specific<<<gridSize,threadSize>>>(d_search_flag,test_n);
+      cudaDeviceSynchronize();
+      cudaMemcpy(search_flag,d_search_flag,gridSize*threadSize*sizeof(unsigned char),cudaMemcpyDeviceToHost);
+      cudaFree(d_search_flag);
+      for (int offset=0;offset<threadSize*gridSize;offset++) {
+        if (search_flag[offset]==1) {
+          solve_nonce = (test_n*threadSize*gridSize)+offset;
+        }
+      }
+      free(search_flag);
+    }
+  }
+  memcpy(output,&solved,sizeof(bool));
+  memcpy(output+1,&solve_nonce,sizeof(uint32_t));
+  free(chunk_hit_cts);
+  cudaFree(d_flag);
 }
