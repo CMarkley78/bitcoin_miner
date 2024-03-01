@@ -1,10 +1,7 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
 #include <cuda_runtime.h>
-#include <cuda_profiler_api.h>
-#include <windows.h>
+#include <library.h>
 
 #define max_uint32_t (((uint32_t)0)-1)
 #define gridSize 1000000
