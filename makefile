@@ -1,19 +1,15 @@
-all: Clean
-	@echo default called
-
-Library: Clean
+Client: Clean
 	@echo Building GPU Library...
 	@mkdir build
-	@nvcc -shared -o ./build/GPU_Miner.dll "./GPU Handler/library.cu" -rdc=false
+	@nvcc -shared -o ./build/GPU_Miner.dll ./GPU_Handler/library.cu -I".\GPU_Handler"
 	@del .\build\GPU_Miner.exp .\build\GPU_Miner.lib
 	@echo Done!
+	@echo Starting client program... Handing off.
+	@python .\Client\client.py
 
 Clean:
-	@echo Cleaning up environment...
+	@echo Resetting environment...
 	@if exist build rd /s /q build
 	@echo Done!
 
-default: Clean
-	@echo Starting miner building/compilation/execution...
-
-.PHONY: Clean Library
+.PHONY: Clean Client Server
