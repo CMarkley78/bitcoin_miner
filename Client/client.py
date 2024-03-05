@@ -1,7 +1,9 @@
 import ctypes
+import socket
 
-print ("Client started.")
+print ("Client started.\n")
 def test_header(header):
+    print ("Working...")
     header_template_array = (ctypes.c_ubyte*76)(*header)
     header_template_pointer = ctypes.cast(header_template_array,ctypes.POINTER(ctypes.c_ubyte))
 
@@ -16,14 +18,55 @@ def test_header(header):
     #Call the function
     search(header_template_pointer,output_pointer)
 
-    return output_array[0]==1, int.from_bytes(bytes(output_array[-4:]),byteorder="little",signed=False)
+    #Return the results
+    return output_array[0]==1, bytes(output_array[-4:])
+
+def get_work():
+    print ("Getting work from server...")
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    server_address = ('localhost', 50089)
+    client_socket.connect(server_address)
+    client_socket.sendall(bytes.fromhex("00"))
+    header = client_socket.recv(76)
+    id = client_socket.recv(4)
+    client_socket.close()
+    return header, id
+
+def submit_nonce(nonce,id):
+    print ("Submitting nonce...")
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_address = ('localhost', 50089)
+    client_socket.connect(server_address)
+    client_socket.sendall(bytes.fromhex("01")+nonce+id)
+    client_socket.close()
+
+def shutdown_server():
+    print ("Shutting down server...\n")
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_address = ('localhost', 50089)
+    client_socket.connect(server_address)
+    client_socket.sendall(bytes.fromhex("02"))
+    client_socket.close()
 
 #Loading in the dynamic library to handle the GPU
 print ("Loading DLL...")
 GPU_Handler = ctypes.CDLL(r"./build/GPU_Miner.dll")
+print ("Loaded.\n")
 
-#Genesis header
-sample_bytes = bytes.fromhex("0100000000000000000000000000000000000000000000000000000000000000000000003BA3EDFD7A7B12B27AC72C3E67768F617FC81BC3888A51323A9FB8AA4B1E5E4A29AB5F49FFFF001D")
+if True:
+    shutdown_server()
+    exit()
 
-
-print (test_header(sample_bytes))
+tested = 0
+print ("Starting main loop...\n")
+while True:
+    tested += 1
+    print (f"\nThis will be work task #{tested}...")
+    header, id = get_work()
+    result = test_header(header)
+    if result[0]!=0:
+        print ("Valid nonce was found!")
+        submit_nonce(result[1],id)
+    else:
+        print ("No valid nonce was found.")
