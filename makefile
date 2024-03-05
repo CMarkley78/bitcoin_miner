@@ -4,12 +4,21 @@ Client: Clean
 	@nvcc -shared -o ./build/GPU_Miner.dll ./GPU_Handler/library.cu -I".\GPU_Handler"
 	@del .\build\GPU_Miner.exp .\build\GPU_Miner.lib
 	@echo Done!
-	@echo Starting client program... Handing off.
+	@echo Starting client... Handing off.
 	@python .\Client\client.py
 
+ClientNOBUILD: Clean
+	@echo Starting client... Handing off.
+	@python .\Client\client.py
+	
+Server: Clean
+	@echo Starting server... Handing off.
+	@python .\Server\server.py
+
 Clean:
-	@echo Resetting environment...
+	@cls
+	@echo Resetting build environment...
 	@if exist build rd /s /q build
 	@echo Done!
 
-.PHONY: Clean Client Server
+.PHONY: Clean Client ClientNOBUILD Server
