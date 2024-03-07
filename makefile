@@ -14,7 +14,6 @@ Server:
 	@echo Starting server... Handing off.
 	@python .\Server\server.py
 Clean:
-	@cls
 	@echo Resetting build environment...
 	@if exist build rd /s /q build
 	@echo Done!
