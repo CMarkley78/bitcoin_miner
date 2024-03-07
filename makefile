@@ -1,8 +1,8 @@
-Client: Clean
+Client:
 	@echo Starting client... Handing off.
 	@python .\Client\client.py
 
-Server: Clean
+Server:
 	@echo Starting server... Handing off.
 	@python .\Server\server.py
 
