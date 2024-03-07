@@ -18,4 +18,4 @@ Clean:
 	@if exist build rd /s /q build
 	@echo Done!
 
-.PHONY: Clean Client HashTest Server
+.PHONY: Clean Client HashTest Server BuildLib
