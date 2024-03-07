@@ -1,6 +1,8 @@
 import ctypes
 from time import time
 
+#Before this branch, the hashrate was 556MH/s
+
 def test_header(header):
     print ("Working...")
     header_template_array = (ctypes.c_ubyte*76)(*header)
