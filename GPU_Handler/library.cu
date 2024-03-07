@@ -5,7 +5,7 @@
 
 #define max_uint32_t (((uint32_t)0)-1)
 #define gridSize 1000000
-#define threadSize 16
+#define threadSize 32
 #define test_cts ((int)ceil(max_uint32_t/(gridSize*threadSize)))
 
 void str__char_arr(const char* str, unsigned char* out) { //Remember to take this out once the library is finished.
@@ -50,6 +50,7 @@ __constant__ uint32_t k_vals[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5db
 __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
 
   //Initialization of hash parts
+  __syncthreads();
   hash[0] = 0x6a09e667;
   hash[1] = 0xbb67ae85;
   hash[2] = 0x3c6ef372;
@@ -61,6 +62,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
 
   //Construction of the 2 data blocks
   unsigned char block_1[64], block_2[64];
+  __syncthreads();
   memcpy(block_1,header,64);
   memcpy(block_2,&header[64],16);
   block_2[16] = 0x80;
@@ -75,6 +77,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
 
   //BEGIN BLOCK 1 PROCESSING
   //Message schedule generation
+  __syncthreads();
   memcpy(message_schedule,block_1,64);
   //The next three lines were almost the end of my sanity in v1. Endianness is stupid. It should all be big endian.
   for (int i=0;i<16;i++) {
@@ -88,6 +91,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
   }
 
   //Next up is the main compression function
+  __syncthreads();
   a = hash[0];
   b = hash[1];
   c = hash[2];
@@ -112,6 +116,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
     b = a;
     a = temp1+temp2;
   }
+  __syncthreads();
   hash[0] = hash[0] + a;
   hash[1] = hash[1] + b;
   hash[2] = hash[2] + c;
@@ -123,6 +128,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
 
   //BEGIN BLOCK 2
   //Message schedule gen... Already been through this.
+  __syncthreads();
   memcpy(&message_schedule[0],&block_2[0],64);
   for (int i=0;i<16;i++) {
     message_schedule[i] = reverse32(message_schedule[i]);
@@ -133,6 +139,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
     message_schedule[i] = message_schedule[i-16]+s0+message_schedule[i-7]+s1;
   }
   //Main compression function
+  __syncthreads();
   a = hash[0];
   b = hash[1];
   c = hash[2];
@@ -157,6 +164,7 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash) {
     b = a;
     a = temp1+temp2;
   }
+  __syncthreads();
   hash[0] = hash[0] + a;
   hash[1] = hash[1] + b;
   hash[2] = hash[2] + c;
@@ -174,6 +182,7 @@ __device__ void d_second_hash(uint32_t* hash) {
   uint32_t message_schedule[64], s0, s1, temp1, temp2, a, b, c, d, e, f, g, h, ch, maj;
 
   //Because all of the hashed data now fits in one block, it's actually easier to just build up the message schedule rather than to build a block then copy it over.
+  __syncthreads();
   for (int i=8;i<16;i++) {
     message_schedule[i] = 0;
   }
@@ -182,6 +191,7 @@ __device__ void d_second_hash(uint32_t* hash) {
   memcpy(message_schedule,hash,32);
 
   //Initialization of hash values
+  __syncthreads();
   hash[0] = 0x6a09e667;
   hash[1] = 0xbb67ae85;
   hash[2] = 0x3c6ef372;
@@ -198,6 +208,7 @@ __device__ void d_second_hash(uint32_t* hash) {
   }
 
   //And then, like normal, we do our main compression loop.
+  __syncthreads();
   a = hash[0];
   b = hash[1];
   c = hash[2];
@@ -222,6 +233,7 @@ __device__ void d_second_hash(uint32_t* hash) {
     b = a;
     a = temp1+temp2;
   }
+  __syncthreads();
   hash[0] += a;
   hash[1] += b;
   hash[2] += c;
@@ -243,22 +255,26 @@ __global__ void d_test_span(int * flag, int n) {
 
   //Create our shared memory space for the header and the hash.
   unsigned char header[80];
-  uint32_t hash[8];
+  __shared__ uint32_t hash[8*threadSize];
 
   //Populate the header
+  __syncthreads();
   for (int i=0;i<76;i++) {
     header[i] = d_header_template[i];
   }
+  __syncthreads();
   memcpy(&header[76],&nonce,4);
 
   //Perform the first hash
-  d_first_hash(header,hash);
+  __syncthreads();
+  d_first_hash(header,&hash[8*threadIdx.x]);
 
   //Perform the second hash
-  d_second_hash(hash);
+  __syncthreads();
+  d_second_hash(&hash[8*threadIdx.x]);
 
   //Increment the hit value for our chunk by the value of compareHashes (1 if found, 0 otherwise, array starts at 0s)
-  atomicAdd(&flag[n],(int)compareHashes(hash,d_target));
+  atomicAdd(&flag[n],(int)compareHashes(&hash[8*threadIdx.x],d_target));
 }
 
 __global__ void d_search_specific(unsigned char* flag, int n) {
@@ -268,7 +284,7 @@ __global__ void d_search_specific(unsigned char* flag, int n) {
 
   //Create our shared memory space for the header and the hash.
   unsigned char header[80];
-  uint32_t hash[8];
+  __shared__ uint32_t hash[8];
 
   //Populate the header
   for (int i=0;i<76;i++) {
@@ -277,16 +293,18 @@ __global__ void d_search_specific(unsigned char* flag, int n) {
   memcpy(&header[76],&nonce,4);
 
   //Perform the first hash
-  d_first_hash(header,hash);
+  d_first_hash(header,&hash[8*threadIdx.x]);
 
   //Perform the second hash
-  d_second_hash(hash);
+  d_second_hash(&hash[8*threadIdx.x]);
 
   //Set our corresponding search section memory to our state
-  flag[(threadSize*blockIdx.x)+(threadIdx.x)] = compareHashes(hash,d_target);
+  flag[(threadSize*blockIdx.x)+(threadIdx.x)] = compareHashes(&hash[8*threadIdx.x],d_target);
 }
 
 void search (unsigned char * header_info, unsigned char* output) {
+  cudaFuncSetCacheConfig(d_test_span, cudaFuncCachePreferL1);
+
   //Copy header into constant memory
   cudaMemcpyToSymbol(d_header_template, header_info, sizeof(unsigned char)*76);
 
