@@ -40,6 +40,7 @@ def submit_nonce(nonce,id):
     client_socket.connect(server_address)
     client_socket.sendall(bytes.fromhex("01")+nonce+id)
     client_socket.close()
+    print ("Submitted nonce.")
 
 def shutdown_server():
     print ("Shutting down server...\n")
@@ -54,19 +55,21 @@ print ("Loading DLL...")
 GPU_Handler = ctypes.CDLL(r"./build/GPU_Miner.dll")
 print ("Loaded.\n")
 
-if True:
+if False:
     shutdown_server()
     exit()
 
 tested = 0
-print ("Starting main loop...\n")
+nonces_found = 0
+print ("Starting main loop...")
 while True:
     tested += 1
-    print (f"\nThis will be work task #{tested}...")
+    print (f"\nThis will be work task #{tested}... This machine has found {nonces_found} valid nonces.")
     header, id = get_work()
     result = test_header(header)
     if result[0]!=0:
         print ("Valid nonce was found!")
+        nonces_found += 1
         submit_nonce(result[1],id)
     else:
         print ("No valid nonce was found.")
