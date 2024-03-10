@@ -1,10 +1,17 @@
+ifeq ($(OS), Windows_NT)
+	rmdir = if exist build rd /s /q
+	mkdir = mkdir
+else
+	rmdir = rm -rf
+	mkdir = mkdir -p
+endif
+
 BuildLib:
 	@echo Building GPU Library...
-	@mkdir build
-	@nvcc -shared -o ./build/GPU_Miner.dll ./GPU_Handler/library.cu -I".\GPU_Handler"
-	@del .\build\GPU_Miner.exp .\build\GPU_Miner.lib
+	@$(mkdir) -p build
+	@nvcc -shared -Xcompiler "-fPIC" -o ./build/GPU_Miner.dll ./GPU_Handler/library.cu -I".\GPU_Handler"
 	@echo Done!
-HashTest: BuildLib
+HashTest:
 	@echo Starting Hashrate Tester... Handing off.
 	@python ./HashTest/tester.py
 Client:
@@ -13,9 +20,9 @@ Client:
 Server:
 	@echo Starting server... Handing off.
 	@python .\Server\server.py
-Clean:
+clean:
 	@echo Resetting build environment...
-	@if exist build rd /s /q build
+	@$(rmdir) build
 	@echo Done!
 
-.PHONY: Clean Client HashTest Server BuildLib
+.PHONY: clean Client HashTest Server BuildLib
