@@ -1,10 +1,10 @@
-BuildLib: Clean
+BuildLib:
 	@echo Building GPU Library...
 	@mkdir build
 	@nvcc -shared -o ./build/GPU_Miner.dll ./GPU_Handler/library.cu -I".\GPU_Handler"
 	@del .\build\GPU_Miner.exp .\build\GPU_Miner.lib
 	@echo Done!
-HashTest: Clean BuildLib
+HashTest: BuildLib
 	@echo Starting Hashrate Tester... Handing off.
 	@python ./HashTest/tester.py
 Client:
