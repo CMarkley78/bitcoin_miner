@@ -1,5 +1,6 @@
 import ctypes
 import socket
+from time import time
 
 print ("Client started.\n")
 def test_header(header):
@@ -22,7 +23,7 @@ def test_header(header):
     return output_array[0]==1, bytes(output_array[-4:])
 
 def get_work():
-    print ("Getting work from server...")
+    print ("\nGetting work from server...")
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     server_address = ('localhost', 50089)
@@ -61,10 +62,10 @@ if False:
 
 tested = 0
 nonces_found = 0
+start = time()
 print ("Starting main loop...")
 while True:
     tested += 1
-    print (f"\nThis will be work task #{tested}... This machine has found {nonces_found} valid nonces.")
     header, id = get_work()
     result = test_header(header)
     if result[0]!=0:
@@ -73,3 +74,4 @@ while True:
         submit_nonce(result[1],id)
     else:
         print ("No valid nonce was found.")
+    print (f"Work task #{tested} complete... This machine has found {nonces_found} valid nonces. Effective hash rate of this machine: {round((((2**32)*tested)/(time()-start))/1000000,2)}MH/s")
