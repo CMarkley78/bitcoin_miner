@@ -55,18 +55,16 @@ def create_work_2():
 
     print (difficulty_to_nbits(rpc_connection.getdifficulty()))
 
-
-
-
-
+solved = 0
 while True:
-    print ("\nWaiting for client to send a message...")
+    print (f"\nWaiting for client to send a message... So far, {solved} block(s) have been solved.")
     connection, client_address = server_socket.accept()
     data = connection.recv(1)
     if data[0]==0:
         print ("Client requested work, will be assigned.")
         connection.sendall(create_work())
     if data[0]==1:
+        solved += 1
         print ("Client submitted a valid nonce!")
         nonce = connection.recv(4)
         work_id = connection.recv(4)
