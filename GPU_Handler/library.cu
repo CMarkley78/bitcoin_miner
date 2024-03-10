@@ -5,7 +5,7 @@
 
 #define max_uint32_t (((uint32_t)0)-1)
 #define gridSize 2000000
-#define threadSize 64
+#define threadSize 32
 #define test_cts ((int)ceil(max_uint32_t/(gridSize*threadSize)))
 
 void str__char_arr(const char* str, unsigned char* out) { //Remember to take this out once the library is finished.
@@ -50,7 +50,6 @@ __constant__ uint32_t k_vals[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5db
 __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a, uint32_t* b, uint32_t* c, uint32_t* d, uint32_t* e, uint32_t* f, uint32_t* g, uint32_t* h) {
 
   //Initialization of hash parts
-  __syncthreads();
   hash[0] = 0x6a09e667;
   hash[1] = 0xbb67ae85;
   hash[2] = 0x3c6ef372;
@@ -62,7 +61,6 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a,
 
   //Construction of the 2 data blocks
   unsigned char block_1[64], block_2[64];
-  __syncthreads();
   memcpy(block_1,header,64);
   memcpy(block_2,&header[64],16);
   block_2[16] = 0x80;
@@ -77,7 +75,6 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a,
 
   //BEGIN BLOCK 1 PROCESSING
   //Message schedule generation
-  __syncthreads();
   memcpy(message_schedule,block_1,64);
   //The next three lines were almost the end of my sanity in v1. Endianness is stupid. It should all be big endian.
   for (int i=0;i<16;i++) {
@@ -91,7 +88,6 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a,
   }
 
   //Next up is the main compression function
-  __syncthreads();
   *a = hash[0];
   *b = hash[1];
   *c = hash[2];
@@ -116,7 +112,6 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a,
     *b = *a;
     *a = temp1+temp2;
   }
-  __syncthreads();
   hash[0] = hash[0] + *a;
   hash[1] = hash[1] + *b;
   hash[2] = hash[2] + *c;
@@ -128,7 +123,6 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a,
 
   //BEGIN BLOCK 2
   //Message schedule gen... Already been through this.
-  __syncthreads();
   memcpy(&message_schedule[0],&block_2[0],64);
   for (int i=0;i<16;i++) {
     message_schedule[i] = reverse32(message_schedule[i]);
@@ -139,7 +133,6 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a,
     message_schedule[i] = message_schedule[i-16]+s0+message_schedule[i-7]+s1;
   }
   //Main compression function
-  __syncthreads();
   *a = hash[0];
   *b = hash[1];
   *c = hash[2];
@@ -164,7 +157,6 @@ __device__ void d_first_hash(unsigned char* header, uint32_t* hash, uint32_t* a,
     *b = *a;
     *a = temp1+temp2;
   }
-  __syncthreads();
   hash[0] = hash[0] + *a;
   hash[1] = hash[1] + *b;
   hash[2] = hash[2] + *c;
@@ -182,7 +174,6 @@ __device__ void d_second_hash(uint32_t* hash, uint32_t* a, uint32_t* b, uint32_t
   uint32_t message_schedule[64], s0, s1, temp1, temp2, ch, maj;
 
   //Because all of the hashed data now fits in one block, it's actually easier to just build up the message schedule rather than to build a block then copy it over.
-  __syncthreads();
   for (int i=8;i<16;i++) {
     message_schedule[i] = 0;
   }
@@ -191,7 +182,6 @@ __device__ void d_second_hash(uint32_t* hash, uint32_t* a, uint32_t* b, uint32_t
   memcpy(message_schedule,hash,32);
 
   //Initialization of hash values
-  __syncthreads();
   hash[0] = 0x6a09e667;
   hash[1] = 0xbb67ae85;
   hash[2] = 0x3c6ef372;
@@ -208,7 +198,6 @@ __device__ void d_second_hash(uint32_t* hash, uint32_t* a, uint32_t* b, uint32_t
   }
 
   //And then, like normal, we do our main compression loop.
-  __syncthreads();
   *a = hash[0];
   *b = hash[1];
   *c = hash[2];
@@ -233,7 +222,6 @@ __device__ void d_second_hash(uint32_t* hash, uint32_t* a, uint32_t* b, uint32_t
     *b = *a;
     *a = temp1+temp2;
   }
-  __syncthreads();
   hash[0] = hash[0] + *a;
   hash[1] = hash[1] + *b;
   hash[2] = hash[2] + *c;
@@ -259,19 +247,15 @@ __global__ void d_test_span(int * flag, int n) {
   __shared__ uint32_t a[threadSize], b[threadSize], c[threadSize], d[threadSize], e[threadSize], f[threadSize], g[threadSize], h[threadSize];
 
   //Populate the header
-  __syncthreads();
   for (int i=0;i<76;i++) {
     header[i] = d_header_template[i];
   }
-  __syncthreads();
   memcpy(&header[76],&nonce,4);
 
   //Perform the first hash
-  __syncthreads();
   d_first_hash(header,&hash[8*threadIdx.x],&a[threadIdx.x],&b[threadIdx.x],&c[threadIdx.x],&d[threadIdx.x],&e[threadIdx.x],&f[threadIdx.x],&g[threadIdx.x],&h[threadIdx.x]);
 
   //Perform the second hash
-  __syncthreads();
   d_second_hash(&hash[8*threadIdx.x],&a[threadIdx.x],&b[threadIdx.x],&c[threadIdx.x],&d[threadIdx.x],&e[threadIdx.x],&f[threadIdx.x],&g[threadIdx.x],&h[threadIdx.x]);
 
   //Increment the hit value for our chunk by the value of compareHashes (1 if found, 0 otherwise, array starts at 0s)
