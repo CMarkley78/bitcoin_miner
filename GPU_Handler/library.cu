@@ -4,7 +4,7 @@
 #include <library.h>
 
 #define max_uint32_t (((uint32_t)0)-1)
-#define gridSize 1000000
+#define gridSize 2000000
 #define threadSize 64
 #define test_cts ((int)ceil(max_uint32_t/(gridSize*threadSize)))
 
@@ -275,7 +275,9 @@ __global__ void d_test_span(int * flag, int n) {
   d_second_hash(&hash[8*threadIdx.x],&a[threadIdx.x],&b[threadIdx.x],&c[threadIdx.x],&d[threadIdx.x],&e[threadIdx.x],&f[threadIdx.x],&g[threadIdx.x],&h[threadIdx.x]);
 
   //Increment the hit value for our chunk by the value of compareHashes (1 if found, 0 otherwise, array starts at 0s)
-  atomicAdd(&flag[n],(int)compareHashes(&hash[8*threadIdx.x],d_target));
+  if ((int)compareHashes(&hash[8*threadIdx.x],d_target) == 1) {
+    atomicAdd(&flag[n],1);
+  }
 }
 
 __global__ void d_search_specific(unsigned char* flag, int n) {
