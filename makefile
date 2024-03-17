@@ -8,7 +8,7 @@ endif
 
 BuildLib:
 	@echo Building GPU Library...
-	@$(mkdir) -p build
+	@$(mkdir) build
 	@nvcc -shared -Xcompiler "-fPIC" -o ./build/GPU_Miner.dll ./GPU_Handler/library.cu -I".\GPU_Handler"
 	@echo Done!
 HashTest:
