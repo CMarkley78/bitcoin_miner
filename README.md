@@ -11,5 +11,5 @@ The HashTest target simply times the hasher function on the genesis header, and 
 The Client target will just start the client application, and it will assume that the built library is already in the ./build directory.
 ### Server
 The Server target will just start the server application.
-### Clean
-The Clean target will just remove the ./build directory if it exists.
+### clean
+The clean target will just remove the ./build directory if it exists.

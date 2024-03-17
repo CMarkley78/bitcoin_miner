@@ -30,4 +30,5 @@ start = time()
 result = test_header(bytes.fromhex("0100000000000000000000000000000000000000000000000000000000000000000000003BA3EDFD7A7B12B27AC72C3E67768F617FC81BC3888A51323A9FB8AA4B1E5E4A29AB5F49FFFF001D"))
 end = time()
 
-print (f"\nSpan search executed in {end-start}s.\nIt returned                  {(result[0],int.from_bytes(result[1], "little"))}.\nThe expected return value is (True, 2083236893).\nThis hasher is {'correct' if ((result[0],int.from_bytes(result[1], "little"))==(True, 2083236893)) else 'incorrect'}.\nThe hashrate of this hasher is {((2**32)/(end-start))/10**6}MH/s.")
+print (f"\nSpan search executed in {end-start}s.\nIt returned                  {(result[0],int.from_bytes(result[1], 'little'))}.\nThe expected return value is (True, 2083236893).\nThis hasher is {'correct' if ((result[0],int.from_bytes(result[1], 'little'))==(True, 2083236893)) else 'incorrect'}.\nThe hashrate of this hasher is {((2**32)/(end-start))/10**6}MH/s.")
+

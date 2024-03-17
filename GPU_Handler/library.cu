@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <cuda_runtime.h>
-#include <library.h>
+#include "library.h"
 
 #define max_uint32_t (((uint32_t)0)-1)
 #define gridSize 2000000
